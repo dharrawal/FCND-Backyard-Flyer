@@ -27,6 +27,9 @@ class BackyardFlyer(Drone):
         self.in_mission = True
         self.check_state = {}
 
+        self.currentWaypoint = -1
+        self.takeOffAlt = 3.0
+
         # initial state
         self.flight_state = States.MANUAL
 
@@ -41,6 +44,25 @@ class BackyardFlyer(Drone):
 
         This triggers when `MsgID.LOCAL_POSITION` is received and self.local_position contains new data
         """
+        # compare with -self.takeOffAlt because relative altitude is -ve when drone climbs
+        if self.flight_state == States.TAKEOFF and abs(self.local_position[2] - (-self.takeOffAlt)) < 0.1:
+            self.calculate_box()
+            self.currentWaypoint = 0
+            self.waypoint_transition()
+        elif self.flight_state == States.WAYPOINT:
+            if self.currentWaypoint < len(self.all_waypoints)-1:
+                if abs(self.local_position[0] - self.target_position[0]) < 0.1    \
+                and abs(self.local_position[1] - self.target_position[1]) < 0.1    \
+                and abs(self.local_position[2] - (-self.target_position[2])) < 0.1:
+                    self.currentWaypoint += 1
+                    self.waypoint_transition()
+            else:
+                if abs(self.local_position[0] - self.target_position[0]) < 0.1    \
+                and abs(self.local_position[1] - self.target_position[1]) < 0.1    \
+                and abs(self.local_position[2] - (-self.target_position[2])) < 0.1:
+                    self.landing_transition()
+                    
+        
         pass
 
     def velocity_callback(self):
@@ -49,6 +71,9 @@ class BackyardFlyer(Drone):
 
         This triggers when `MsgID.LOCAL_VELOCITY` is received and self.local_velocity contains new data
         """
+        if self.flight_state == States.LANDING and abs(self.local_position[2]) < 0.1 and self.local_velocity[2] < 0.01:
+            self.disarming_transition()
+            
         pass
 
     def state_callback(self):
@@ -57,13 +82,21 @@ class BackyardFlyer(Drone):
 
         This triggers when `MsgID.STATE` is received and self.armed and self.guided contain new data
         """
+
+        if self.flight_state == States.MANUAL:
+            self.arming_transition()
+        elif self.flight_state == States.ARMING:
+            self.takeoff_transition()
+        elif self.flight_state == States.DISARMING:
+            self.manual_transition()
+            
         pass
 
     def calculate_box(self):
-        """TODO: Fill out this method
-        
-        1. Return waypoints to fly a box
-        """
+        self.all_waypoints = [(15, 0, 10, np.pi/2),
+                              (15, 15, 10, 0),
+                              (0, 15, 10, -np.pi/2),
+                              (0, 0, 10, np.pi)]
         pass
 
     def arming_transition(self):
@@ -74,6 +107,11 @@ class BackyardFlyer(Drone):
         3. Set the home location to current position
         4. Transition to the ARMING state
         """
+        self.take_control()
+        self.arm()
+        self.set_home_position(self.global_position[0], self.global_position[1], self.global_position[2])
+        self.flight_state = States.ARMING
+        
         print("arming transition")
 
     def takeoff_transition(self):
@@ -83,6 +121,9 @@ class BackyardFlyer(Drone):
         2. Command a takeoff to 3.0m
         3. Transition to the TAKEOFF state
         """
+        self.takeoff(self.takeOffAlt)
+        self.flight_state = States.TAKEOFF
+        
         print("takeoff transition")
 
     def waypoint_transition(self):
@@ -91,6 +132,10 @@ class BackyardFlyer(Drone):
         1. Command the next waypoint position
         2. Transition to WAYPOINT state
         """
+        self.target_position = self.all_waypoints[self.currentWaypoint]
+        self.cmd_position(self.target_position[0], self.target_position[1], self.target_position[2], self.target_position[3])
+        self.flight_state = States.WAYPOINT
+
         print("waypoint transition")
 
     def landing_transition(self):
@@ -99,6 +144,9 @@ class BackyardFlyer(Drone):
         1. Command the drone to land
         2. Transition to the LANDING state
         """
+        self.land()
+        self.flight_state = States.LANDING
+
         print("landing transition")
 
     def disarming_transition(self):
@@ -107,6 +155,9 @@ class BackyardFlyer(Drone):
         1. Command the drone to disarm
         2. Transition to the DISARMING state
         """
+        self.disarm()
+        self.flight_state = States.DISARMING
+        
         print("disarm transition")
 
     def manual_transition(self):
