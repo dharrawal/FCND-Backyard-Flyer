@@ -31,6 +31,9 @@ class BackyardFlyer(Drone):
         self.in_mission = True
         self.check_state = {}
 
+        self.currentWaypoint = -1
+        self.takeOffAlt = 3.0
+
         # initial state
         self.flight_state = States.MANUAL
 
